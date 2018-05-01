@@ -45,6 +45,7 @@ static char *getfilename(const direntry_t *direntry, char *fn);
 static void putdirentry(direntry_t *direntry, const char *fn,
                         unsigned int attrib, struct tm *time,
                         unsigned int strtBlk, unsigned int size);
+static struct tm *getTime(void);
 static direntry_t *searchRoot(const char *name);
 static direntry_t *searchSubdir(const char *name, block_t block,
                                 unsigned int *blkindex);
@@ -443,6 +444,22 @@ static void putdirentry(direntry_t *direntry, const char *fn,
 
    direntry->firstSector = 0xffff & strtBlk;
    direntry->fileSize = 0xffffffff & size;
+}
+
+
+/* Get the current time and convert to current time in the local
+ * time zone.
+ *
+ * Returns a struct tm pointer which can be used as the entryTime parameter
+ * for putdirentry().  This pointer points to a statically allocated struct
+ * which could be overwritten by subsequent calls to any of the time and
+ * date functions.  Hence, this function is not thread-safe.
+ */
+static struct tm *getTime(void)
+{
+   time_t now;
+   time(&now);
+   return localtime(&now);
 }
 
 
