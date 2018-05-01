@@ -213,7 +213,8 @@ int fd_del(const char *file)
  * current time in the current time zone.  The file's starting block should
  * be set to 0 and its size should be set to 0 bytes.  See the Section 2
  * man page for time() and the manpage for localtime() for getting the
- * current time and converting it to the current time zone.
+ * current time and converting it to the current time zone.  Or, use the
+ * getTime() helper function.
  *
  * Because file might contain lower case characters, toupper() should be used
  * to convert all characters to upper case.  Do _not_ modify the string
