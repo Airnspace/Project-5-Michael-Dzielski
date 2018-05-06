@@ -280,7 +280,7 @@ static int fd_dir_subdir(int showAll)
  */
 static int direntryFree(const direntry_t *direntry)
 {
-   if (direntry->filename[0] == 0xe5
+   if (direntry->filename[0] == (unsigned char) 0xe5
        || direntry->filename[0] == 0x00)
       return 1;
    else
