@@ -125,7 +125,6 @@ int fd_unmount(int dev)
 }
 
 
-
 /* List the entries in the current working directory.  Hidden entries
  * are listed if showAll is true, otherwise hidden entries are not listed.
  * Entries with long file names are never listed.
@@ -138,6 +137,13 @@ int fd_unmount(int dev)
  */
 int fd_dir(int showAll)
 {
+
+  if (cwdIsRoot()){
+    return fd_dir_root(showAll);
+   }
+  else{
+    fd_dir_subdir(showAll);
+  }
    return -1;
 }
 
@@ -160,7 +166,34 @@ int fd_dir(int showAll)
  */
 int fd_cd(const char *dir)
 {
-   return -1;
+  char sstring[16];
+  int i;
+  block_t block;
+  unsigned int bi;
+  direntry_t *direntry;
+  //prevents segmentation faults
+  if(dir == NULL) return -1;
+  //in case of edge cases
+  if ((unsigned char) dir[0] == (unsigned char) 0xe5) return -1;
+  //doesn't change directory because the root is it's own parent
+  if (strcmp(dir, "..") == 0 && cwdIsRoot()) return 0;
+
+  //turns string into an uppercase copy of dir
+  strcpy(sstring, dir);
+  for (i = 0; i < 16; i++){
+    sstring[i] = toupper(sstring[i]);}
+
+  if(cwdIsRoot()){
+    direntry = searchRoot(sstring);}
+  else direntry = searchSubDir(sstring, block, &bi);
+
+  if (direntry == NULL) return -1;
+  if (!subdirectory(direntry)) return -1;
+
+  g_cwdHead = direntry->firstSector;
+
+  return 0;
+
 }
 
 
@@ -180,7 +213,43 @@ int fd_cd(const char *dir)
  */
 int fd_type(const char *file)
 {
-   return -1;
+  char string[16];
+  int i = 0;
+  int sec = 0;
+  int fsize = 0;
+  int nchar = 0;
+  block_t block;
+  unsigned int bindex;
+  direntry_t *direntry;
+
+  //in case of edge cases
+  if (file == NULL) return -1;
+  if ((unsigned char) file[0] == (unsigned char) 0xe5) return-1;
+
+  //turns string into an uppercase copy of the file
+  strcpy(string, file);
+  for (i = 0; i < 16; i++) string[i] = toupper(string[i]);
+  //searches in the direnty for the appropriate place
+  if (cwdIsRoot()) direntry = searchRoot(string);
+  else direntry = searchSubDir(string, block, &bindex);
+  //checks for failure
+  if (direntry == NULL) return -1;
+  if (subdirectory(direntry)) return -1;
+  //reads the file
+  sec = direntry->firstSector;
+  fsize = direntry->fileSize;
+
+  if (!sec) return -1;
+  //keeps reading while there is still more to read
+  while(!lastBlk(sec)){
+    readblock(g_dev, block, ltop(sec));
+    sec = getfatentry(g_fat, sec);
+    for (i=0; i < BLOCKSIZE && nchar < fsize; i++) {
+      putchar(block[i]);
+      nchar++;
+    }
+  }
+  return nchar;
 }
 
 
@@ -201,8 +270,9 @@ int fd_type(const char *file)
  * On success, return the number of blocks freed.  Otherwise, return
  * -1.
  */
-int fd_del(const char *file)
-{
+int fd_del(const char *file){
+
+
    return -1;
 }
 
@@ -229,7 +299,32 @@ int fd_del(const char *file)
  */
 int fd_creat(const char *file)
 {
-   return -1;
+  int i;
+  char string[16];
+  block_t block;
+  unsigned int blkindex;
+  direntry_t *direntry;
+  time_t t;
+  //edge casews
+  if (file == NULL) return -1;
+  if ((unsigned char) file[0] == (unsigned char) 0xe5) return -1;
+  //translates again to uppercase
+  strcpy(string, file);
+  for (i=0; i < 16; i++) {
+    string[i] = toupper(file[i]); }
+  //makes sure there's no other files or subdirectories with the same name
+  if (cwdIsRoot()) direntry = searchRoot(string);
+  else direntry = getFreeSubDirEntry(block, &blkindex);
+
+  if (direntry == NULL) return -1;
+  t = time(NULL);
+  
+  putdirentry(direntry, string, 0, localtime(&t), 0, 0);
+  if(!cwdIsRoot()){
+    writeblock(g_dev, block, ltop(blkindex));
+  }
+
+   return 0;
 }
 
 
@@ -261,7 +356,20 @@ int fd_append(const char *file, const char *data, unsigned int len)
  */
 static int fd_dir_root(int showAll)
 {
-   return -1;
+ int i;
+   direntry_t *direntry = (direntry_t *) g_root;
+   char name2[16];
+   int count;
+   int fsize;
+
+   for (i = 0; i < ROOT_BLOCKS * DIR_ENTRIES; i++, direntry++)
+     if (!longFN(direntry)  && (!hidden(direntry) || showAll) && !direntryFree(direntry)){
+      list(direntry);
+      fsize += direntry ->fileSize;
+      count++;
+    }
+   printf("# of Entries: %d\n# Bytes: %d\n", count, fsize);
+   return count;
 }
 
 
@@ -271,12 +379,37 @@ static int fd_dir_root(int showAll)
  */
 static int fd_dir_subdir(int showAll)
 {
-   return -1;
+     int i;
+     int count = 0;
+     int size = 0;
+   unsigned int blk = g_cwdHead;
+   direntry_t *direntry;
+   block_t block;
+
+
+   while (!lastBlk(blk))
+   {
+      readblock(g_dev, block, ltop(blk));
+      direntry = (direntry_t *) block;
+
+      for (i = 0; i < DIR_ENTRIES; i++, direntry++)
+	{
+	if ((showAll || !hidden(direntry  )) && !longFN(direntry  ) && !direntryFree(direntry  ))
+         {
+	   list(direntry  );
+	   size += direntry ->fileSize;
+	   count++;
+         }
+	}
+      blk = getfatentry(g_fat, blk);
+   }
+   printf("# Entries: %d\n# Bytes: %d\n", count, size);
+   return count;
 }
 
 
 /* Returns 1 if the directory entry pointed to by direntry is free.
- * Otherwise, returns 0.
+/ * Otherwise, returns 0.
  */
 static int direntryFree(const direntry_t *direntry)
 {
@@ -293,6 +426,7 @@ static int direntryFree(const direntry_t *direntry)
  */
 static int hidden(const direntry_t *direntry)
 {
+
    return direntry->attributes & HIDDEN;
 }
 
